@@ -1,6 +1,7 @@
 import { CART_COOKIE, CURRENCY, formatUsd, parseCart, resolveLines, totalCents } from "@/lib/cart";
 import { placeOrderAction } from "@/lib/checkout-actions";
 import { IDENTITY_COOKIE, parseIdentity } from "@/lib/session";
+import { BeginCheckoutTracker } from "@/lib/tracking/trackers";
 import { cookies } from "next/headers";
 
 type SearchParams = { error?: string };
@@ -13,9 +14,22 @@ export default function CheckoutPage({ searchParams }: { searchParams: SearchPar
   const identity = parseIdentity(jar.get(IDENTITY_COOKIE)?.value);
   const errorMsg = errorFor(searchParams.error);
 
+  const beginCheckoutSummary = {
+    items: lines.map((line) => ({
+      sku: line.sku,
+      name: line.product.name,
+      quantity: line.qty,
+      price_cents: line.product.priceCents,
+      currency: line.product.currency,
+    })),
+    valueCents: total,
+    currency: CURRENCY,
+  };
+
   return (
     <>
       <h1 className="page-title">checkout --identify</h1>
+      {lines.length > 0 && <BeginCheckoutTracker summary={beginCheckoutSummary} />}
       <p className="muted">
         This is the moment the visitor stops being anonymous. Fields are plaintext in the browser —
         hashing happens server-side (T4).
