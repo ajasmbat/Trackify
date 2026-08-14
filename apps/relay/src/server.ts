@@ -5,6 +5,8 @@ import { env } from "./env";
 import { registerModules } from "./modules/index";
 import { bootWorker, DestinationRegistry } from "./queue/index";
 import { createEnricher } from "./enrich/pipeline";
+import { metaDestination } from "./destinations/meta/index";
+import { warnMetaTestEventInProdAtBoot } from "./destinations/meta/boot";
 
 // Fastify with pino JSON logging. Every log line — from Fastify itself and
 // from any module — carries `request_id`; when the request has a `journey_id`
@@ -73,9 +75,9 @@ await registerModules(app);
 
 // Delivery worker (T5). Owns its own pg.Pool so a slow destination call
 // cannot starve the ingest side of connections. Adapters are registered
-// here at boot (T6 wires in Meta) — the queue itself never imports one.
+// here at boot — the queue itself never imports one.
 const registry = new DestinationRegistry();
-// registry.register(new MetaDestination()); // T6 lands and wires this line.
+registry.register(metaDestination);
 
 // Enrich each event with the visitor's stored hashed identity before the
 // destination adapter sees it (T13). The enricher reads through the worker's
@@ -86,6 +88,12 @@ const workerBoot = bootWorker({
   enricherFactory: (pool) => createEnricher({ pool }),
 });
 workerBoot.worker.start();
+
+// T14 boot guardrail. Walks every enabled Meta destination once the pool
+// is up and delegates the "is this misconfigured for production?" call to
+// the adapter (which owns Meta's field names). Fire-and-forget: never
+// blocks listen().
+void warnMetaTestEventInProdAtBoot(workerBoot.pool);
 
 app.addHook("onClose", async () => {
   await workerBoot.shutdown();

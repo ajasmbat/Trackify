@@ -137,3 +137,34 @@ this before proposing a different approach.
   enricher lands. Persistence is composed at T12's `onResponse` hook —
   not inside T4's route handler — so T4's ownership boundary stays
   clean and a persistence failure never turns a 202 into a 5xx.
+- 2026-08-14 — T14 live Meta wiring. Real credentials never touch the
+  runtime env: the operator fills three `META_*` vars in `.env`, then
+  runs `pnpm setup:meta` (apps/relay/src/destinations/meta/setup.ts)
+  which encrypts them via the T1 helper and upserts one seeded tenant's
+  `destinations` row. The setup script lives INSIDE
+  `apps/relay/src/destinations/meta/` (not `packages/db/`) so this
+  folder stays the only place that spells Meta credential field names —
+  the containment test in `meta/index.test.ts` enforces that boundary.
+  Rationale: keeps the runtime code path identical to production
+  tenants (all creds live encrypted in Postgres) and keeps live tokens
+  out of `.env` on shared boxes. `pixel_id` intentionally lives INSIDE
+  the encrypted credentials blob (not just in the plaintext
+  `destinations.config` column) because the T6 adapter only receives
+  the decrypted credentials record at send time — MetaConfig's Zod
+  schema requires `pixel_id` there.
+- 2026-08-14 — T14 boot guardrail. `apps/relay/src/server.ts` registers
+  `metaDestination` in the DestinationRegistry (the `T6 lands and wires
+  this line` stub is now real) and fires `warnMetaTestEventInProdAtBoot`
+  right after `bootWorker`. The helper walks every enabled Meta row,
+  decrypts, and calls T6's `warnIfTestEventInProduction`, which logs
+  `meta_test_event_in_prod` per offender in production. Fire-and-forget
+  so a DB blip at boot never blocks `listen()`; a DB blip during the
+  walk itself logs `meta_boot_warn_failed` instead of throwing. Test:
+  `apps/relay/src/destinations/meta/boot.test.ts`.
+- 2026-08-14 — T14 verification runbook. The manual journey +
+  Events Manager screenshots live under `docs/verification/README.md`,
+  with `purchase-received.png` / `purchase-deduplicated.png` /
+  `event-match-quality.png` dropped alongside it once the operator
+  runs the sequence. The runbook stays inside `docs/verification/**`
+  (this ticket's `Owns:` boundary) so a later live-verification pass
+  can update the screenshots without touching any code.

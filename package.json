@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "seed": "pnpm --filter @trackify/db seed",
     "db:push": "pnpm --filter @trackify/db push",
+    "setup:meta": "pnpm --filter @trackify/relay setup:meta",
     "tunnel": "sh infra/tunnel/run.sh"
   },
   "devDependencies": {
