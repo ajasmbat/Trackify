@@ -125,6 +125,12 @@ export async function registerProxyRoutes(
     if (!host) return; // Let /healthz etc. handle it (fine on localhost too).
     if (host === apex || !host.endsWith(suffix)) return; // Not for us.
 
+    // /gtm.js is owned by the Custom Loader route (T20) — it fetches from
+    // Google directly, not from the tenant's container. Let Fastify's
+    // router match the loader instead of forwarding to the container.
+    const path = (req.url ?? "").split("?")[0] ?? "";
+    if (path === "/gtm.js") return;
+
     const subdomain = host.slice(0, host.length - suffix.length);
     if (!subdomain) return;
 
