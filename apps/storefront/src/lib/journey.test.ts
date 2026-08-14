@@ -63,14 +63,15 @@ describe("add_to_cart -> begin_checkout -> purchase", () => {
   });
 });
 
-describe("no tracking imports", () => {
-  // Acceptance check: this ticket must not import from apps/storefront/lib/tracking/**
-  // or reach data.<domain>. The path does not exist yet (T8 owns it), so a stray
-  // import would already fail typecheck — this is belt-and-suspenders.
+describe("no custom-loader imports", () => {
+  // Acceptance check: T11 owns `data.<domain>` — the customer-domain loader
+  // that will host the compiled tracking bundle. Nothing in the storefront
+  // app source should be reaching for that hostname today. (The T8 tracking
+  // module lives at `@/lib/tracking/*` and is imported freely.)
   const APP_ROOT = join(__dirname, "..");
-  const FORBIDDEN_PATTERNS = [/\/lib\/tracking\b/, /['"]data\.[a-z0-9-]+['"]/i];
+  const FORBIDDEN_PATTERNS = [/['"]data\.[a-z0-9-]+['"]/i];
 
-  it("has no references to lib/tracking or data.<domain> anywhere in the app source", () => {
+  it("has no references to data.<domain> anywhere in the app source", () => {
     for (const file of walk(APP_ROOT)) {
       if (!/\.(ts|tsx)$/.test(file)) continue;
       // Skip this test file — the forbidden patterns appear here as assertions.

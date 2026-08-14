@@ -1,4 +1,5 @@
 import { CART_COOKIE, parseCart, totalQty } from "@/lib/cart";
+import { TrackingProvider } from "@/lib/tracking/trackers";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import "./globals.css";
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </nav>
         </header>
         <main className="site-main">{children}</main>
+        <TrackingProvider />
       </body>
     </html>
   );

@@ -1,5 +1,7 @@
 import { formatUsd } from "@/lib/cart";
 import { orderCookieName, parseOrder } from "@/lib/order";
+import { IDENTITY_COOKIE, parseIdentity } from "@/lib/session";
+import { PurchaseTracker } from "@/lib/tracking/trackers";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
@@ -10,12 +12,29 @@ export default function OrderConfirmationPage({ params }: Props) {
   const orderRaw = jar.get(orderCookieName(params.id))?.value;
   const order = parseOrder(orderRaw);
   if (!order || order.id !== params.id) notFound();
+  const identity = parseIdentity(jar.get(IDENTITY_COOKIE)?.value);
 
   const valueMajor = (order.totalCents / 100).toFixed(2);
+  const purchaseSummary = {
+    orderId: order.id,
+    valueCents: order.totalCents,
+    currency: order.currency,
+    items: order.lines.map((line) => ({
+      sku: line.sku,
+      name: line.name,
+      quantity: line.qty,
+      price_cents: line.unitPriceCents,
+      currency: order.currency,
+    })),
+  };
 
   return (
     <>
       <h1 className="page-title">order/{order.id} --receipt</h1>
+      <PurchaseTracker
+        order={purchaseSummary}
+        identity={identity ? { email: identity.email, phone: identity.phone } : null}
+      />
       <pre className="receipt" data-testid="order-receipt">
         {"order    : "}
         <b data-testid="transaction_id">{order.id}</b>
