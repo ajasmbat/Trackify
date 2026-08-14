@@ -1,6 +1,11 @@
 import http from "node:http";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { SgtmContainerRepo } from "../repo";
+import {
+  applyGeoHeaders,
+  stripInboundGeoHeaders,
+  type GeoBackend,
+} from "../geo";
 
 // Host-based streaming reverse proxy. Given a request for
 // `<subdomain>.sgtm.<apex>`, look up the container by subdomain and stream
@@ -32,6 +37,9 @@ export interface ProxyDeps {
   // Cache TTL for subdomain → hostPort lookups. Keeping this small avoids
   // stale routing when a container is restarted. Set to 0 to disable.
   cacheTtlMs?: number;
+  // Process-wide GEO backend (T22). `null` means the backend is `off` — we
+  // still strip inbound X-Geo-*, we just never re-add them.
+  geo?: GeoBackend | null;
 }
 
 type ContainerState = { hostPort?: number };
@@ -39,6 +47,7 @@ type ContainerState = { hostPort?: number };
 interface RouteTarget {
   hostPort: number;
   containerId: string;
+  geoHeadersEnabled: boolean;
 }
 
 export async function registerProxyRoutes(
@@ -63,6 +72,7 @@ export async function registerProxyRoutes(
     const target: RouteTarget = {
       hostPort: state.hostPort,
       containerId: row.id,
+      geoHeadersEnabled: row.geoHeadersEnabled,
     };
     if (ttl > 0) cache.set(subdomain, { target, expires: now + ttl });
     return target;
@@ -78,6 +88,20 @@ export async function registerProxyRoutes(
       if (v === undefined) continue;
       if (HOP_BY_HOP.has(k.toLowerCase())) continue;
       upstreamHeaders[k] = v;
+    }
+
+    // Strip any inbound X-Geo-* the client set BEFORE the backend re-adds
+    // them — a browser must never be able to forge a country/region and get
+    // the container's GTM tags to trust it. This runs even when the backend
+    // is `off` or the container opted out of geo enrichment.
+    stripInboundGeoHeaders(upstreamHeaders);
+
+    if (target.geoHeadersEnabled && deps.geo) {
+      const data = deps.geo.lookup(
+        req.headers,
+        req.raw.socket.remoteAddress,
+      );
+      if (data) applyGeoHeaders(upstreamHeaders, data);
     }
 
     reply.hijack();

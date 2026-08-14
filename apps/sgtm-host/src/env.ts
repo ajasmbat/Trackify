@@ -17,6 +17,16 @@ const schema = commonEnv.merge(databaseEnv).merge(
       .string()
       .min(1)
       .default("gcr.io/cloud-tagging-10302018/server:latest"),
+    //
+    // T22 — GEO enrichment. `cloudflare` (default) reads the CF-* headers
+    // the tunnel already stamps; `maxmind` looks up client IP in a local
+    // GeoLite2-City DB (path from SGTM_MAXMIND_DB_PATH); `off` skips
+    // enrichment entirely (inbound X-Geo-* are still stripped — never
+    // trusted).
+    SGTM_GEO_BACKEND: z
+      .enum(["cloudflare", "maxmind", "off"])
+      .default("cloudflare"),
+    SGTM_MAXMIND_DB_PATH: z.string().min(1).optional(),
   }),
 );
 

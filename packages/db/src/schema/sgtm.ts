@@ -1,4 +1,5 @@
 import {
+  boolean,
   pgTable,
   text,
   timestamp,
@@ -40,6 +41,10 @@ export const sgtmContainers = pgTable(
       .notNull()
       .default({}),
     previewServerUrl: text("preview_server_url"),
+    // T22 (Wave 6): inject request-scoped `X-Geo-*` headers on every proxied
+    // request. Table-stakes for a hosted sGTM, so it defaults to on — a
+    // container opts out only when the tenant has a specific reason to.
+    geoHeadersEnabled: boolean("geo_headers_enabled").notNull().default(true),
     lastError: text("last_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
