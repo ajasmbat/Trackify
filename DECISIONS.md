@@ -137,3 +137,34 @@ this before proposing a different approach.
   enricher lands. Persistence is composed at T12's `onResponse` hook —
   not inside T4's route handler — so T4's ownership boundary stays
   clean and a persistence failure never turns a 202 into a 5xx.
+- 2026-08-14 — sGTM default container template is hand-authored JSON in
+  `packages/sgtm-templates/src/base-container.json`, rendered per tenant
+  by a Zod-typed `render()` helper + `sgtm-render` CLI. Ships one
+  Trackify data client on `POST /data`, one Meta CAPI tag whose
+  `pixelId`/`accessToken`/`testEventCode` come from the tenant's
+  decrypted destinations row, and one disabled GA4 placeholder tag
+  that flips on when GA4 credentials are provided. Chosen over
+  round-tripping a GTM UI export because (a) diffs are reviewable in
+  PRs, (b) the same JSON versions with the rest of the repo, and (c)
+  no engineer needs a shared GTM account to change a tag parameter.
+  Two invariants stay contained here rather than leaking into other
+  packages: canonical field names (`event_id`, `journey_id`,
+  `visitor_id`, …) live in `field-map.ts` and substitute at render
+  time so a rename in `@trackify/shared/events` flows through in one
+  place; the CanonicalEvent-to-Meta-standard-event-name mapping lives
+  in the template's "Meta Event Name Map" variable and is asserted at
+  test time to equal `EVENT_NAME_MAP` in the relay's Meta payload
+  builder — drift there would silently change what Meta receives from
+  a tenant migrated to sGTM delivery.
+- 2026-08-14 — The sGTM template renderer is a workspace package,
+  `@trackify/sgtm-templates`, not a script under `scripts/`. Reason:
+  future test/lint infra + downstream apps (sgtm-host, T19 console)
+  need to import `render()` and `DEFAULT_FIELD_MAP` as first-class
+  modules; a loose script would force each caller to shell out. It is
+  intentionally NOT wired into `packages/db/src/seed.ts` — pulling
+  sgtm-templates into the DB package for a dev-only side effect
+  widens the dependency graph of the lowest-level package. Operators
+  render seeded-tenant configs on demand via
+  `pnpm --filter @trackify/sgtm-templates render --gtm-container-id
+  GTM-ACME99 --pixel-id 111111111111111 --access-token
+  SEED_ACME_META_TOKEN --format env`.

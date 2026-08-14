@@ -1,0 +1,124 @@
+{
+  "exportFormatVersion": 2,
+  "exportTime": "2026-08-14 00:00:00",
+  "containerVersion": {
+    "path": "accounts/0/containers/0/versions/0",
+    "accountId": "0",
+    "containerId": "0",
+    "containerVersionId": "0",
+    "name": "Trackify default sGTM container",
+    "description": "Base container template with a Trackify data client, Meta CAPI tag, and GA4 placeholder tag. Rendered per-tenant by @trackify/sgtm-templates.",
+    "container": {
+      "path": "accounts/0/containers/0",
+      "accountId": "0",
+      "containerId": "0",
+      "publicId": "{{GTM_CONTAINER_ID}}",
+      "name": "Trackify sGTM",
+      "usageContext": ["SERVER"],
+      "features": {
+        "supportUserPermissions": false,
+        "supportEnvironments": true,
+        "supportServerSide": true
+      },
+      "tagManagerUrl": "https://tagmanager.google.com/#/container/accounts/0/containers/0"
+    },
+    "variable": [
+      {
+        "variableId": "1",
+        "name": "Trackify Field Map",
+        "type": "cvt_map",
+        "notes": "Canonical field names on the inbound CanonicalEvent envelope. Substituted at render time from @trackify/sgtm-templates/field-map so a rename in @trackify/shared/events flows here in one place.",
+        "parameter": [
+          { "type": "template", "key": "eventId", "value": "{{FIELD_EVENT_ID}}" },
+          { "type": "template", "key": "eventName", "value": "{{FIELD_EVENT_NAME}}" },
+          { "type": "template", "key": "journeyId", "value": "{{FIELD_JOURNEY_ID}}" },
+          { "type": "template", "key": "visitorId", "value": "{{FIELD_VISITOR_ID}}" },
+          { "type": "template", "key": "tenantId", "value": "{{FIELD_TENANT_ID}}" },
+          { "type": "template", "key": "ts", "value": "{{FIELD_TS}}" },
+          { "type": "template", "key": "identity", "value": "{{FIELD_IDENTITY}}" },
+          { "type": "template", "key": "context", "value": "{{FIELD_CONTEXT}}" },
+          { "type": "template", "key": "props", "value": "{{FIELD_PROPS}}" }
+        ]
+      },
+      {
+        "variableId": "2",
+        "name": "Meta Event Name Map",
+        "type": "cvt_map",
+        "notes": "CanonicalEvent.name -> Meta standard event_name. Mirrors apps/relay/src/destinations/meta/payload.ts:EVENT_NAME_MAP; parity is enforced by a repo test.",
+        "parameter": [
+          { "type": "template", "key": "page_view", "value": "PageView" },
+          { "type": "template", "key": "view_item", "value": "ViewContent" },
+          { "type": "template", "key": "add_to_cart", "value": "AddToCart" },
+          { "type": "template", "key": "begin_checkout", "value": "InitiateCheckout" },
+          { "type": "template", "key": "user_identified", "value": "CompleteRegistration" },
+          { "type": "template", "key": "purchase", "value": "Purchase" }
+        ]
+      }
+    ],
+    "client": [
+      {
+        "clientId": "1",
+        "name": "Trackify Data Client",
+        "type": "cvt_trackify_data",
+        "notes": "Receives POST /data with a CanonicalEvent JSON body, normalises the field names via the Trackify Field Map, and calls runContainer() so downstream tags fire.",
+        "priority": 100,
+        "parameter": [
+          { "type": "template", "key": "requestPath", "value": "/data" },
+          { "type": "template", "key": "requestMethod", "value": "POST" },
+          { "type": "template", "key": "contentType", "value": "application/json" },
+          { "type": "template", "key": "fieldMapVariable", "value": "Trackify Field Map" }
+        ]
+      }
+    ],
+    "trigger": [
+      {
+        "triggerId": "1",
+        "name": "All Trackify Events",
+        "type": "customEvent",
+        "customEventFilter": [
+          {
+            "type": "equals",
+            "parameter": [
+              { "type": "template", "key": "arg0", "value": "{{_event}}" },
+              { "type": "template", "key": "arg1", "value": "trackify.canonical" }
+            ]
+          }
+        ]
+      }
+    ],
+    "tag": [
+      {
+        "tagId": "1",
+        "name": "Meta Conversions API",
+        "type": "cvt_meta_capi",
+        "notes": "Server-side Meta CAPI. Pixel id + access token substituted per tenant. Event-name mapping comes from the Meta Event Name Map variable so any drift is caught by the repo parity test.",
+        "priority": 100,
+        "firingTriggerId": ["1"],
+        "parameter": [
+          { "type": "template", "key": "pixelId", "value": "{{PIXEL_ID}}" },
+          { "type": "template", "key": "accessToken", "value": "{{ACCESS_TOKEN}}" },
+          { "type": "template", "key": "actionSource", "value": "website" },
+          { "type": "template", "key": "eventNameMapVariable", "value": "Meta Event Name Map" },
+          { "type": "template", "key": "fieldMapVariable", "value": "Trackify Field Map" },
+          { "type": "template", "key": "apiVersion", "value": "v20.0" },
+          { "type": "template", "key": "apiBaseUrl", "value": "https://graph.facebook.com" },
+          { "type": "template", "key": "testEventCode", "value": "{{TEST_EVENT_CODE}}" }
+        ]
+      },
+      {
+        "tagId": "2",
+        "name": "Google Analytics 4",
+        "type": "cvt_ga4",
+        "notes": "Placeholder GA4 tag. Wired to the same trigger so a follow-up ticket can flesh out the parameter mapping without touching the client.",
+        "priority": 50,
+        "firingTriggerId": ["1"],
+        "parameter": [
+          { "type": "template", "key": "measurementId", "value": "{{MEASUREMENT_ID}}" },
+          { "type": "template", "key": "apiSecret", "value": "{{GA4_API_SECRET}}" },
+          { "type": "template", "key": "fieldMapVariable", "value": "Trackify Field Map" },
+          { "type": "template", "key": "enabled", "value": "{{GA4_ENABLED}}" }
+        ]
+      }
+    ]
+  }
+}
