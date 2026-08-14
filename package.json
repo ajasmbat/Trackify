@@ -1,0 +1,25 @@
+{
+  "name": "trackify",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --stream --if-present dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "pnpm --filter @trackify/db seed",
+    "db:push": "pnpm --filter @trackify/db push"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "dotenv-cli": "^7.4.2",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
