@@ -6,6 +6,10 @@ import type { CanonicalEvent } from "@trackify/shared";
 import { DestinationRegistry } from "./registry";
 import { FakeDestination } from "./fake";
 import { createWorker } from "./worker";
+import { createEnricher } from "../enrich/pipeline";
+import { readStoredIdentity, upsertIdentity } from "../enrich/store";
+import { drizzle } from "drizzle-orm/node-postgres";
+import * as dbSchema from "@trackify/db/schema";
 
 // Integration tests. Require a live Postgres reachable at DATABASE_URL with
 // the Wave 0 schema applied (`pnpm db:push`). When either is unavailable we
@@ -391,4 +395,259 @@ suite("delivery worker (Postgres)", () => {
 
     await workerPool.end();
   }, 15_000);
+
+  // ---------------------------------------------------------------------
+  // Enricher (T13) end-to-end. Lives in this file because it shares the
+  // delivery-worker Postgres and must serialise with the tests above —
+  // running the enricher tests in a separate file races with the
+  // pg_terminate_backend test above and the 100×2 cross-worker race.
+  // ---------------------------------------------------------------------
+  const HASH_EMAIL_ENR = "1".repeat(64);
+  const HASH_PHONE_ENR = "2".repeat(64);
+
+  async function makeEventJob(
+    scenario: Awaited<ReturnType<typeof makeScenario>>,
+    event: CanonicalEvent,
+    visitorId: string,
+  ): Promise<{ jobId: string; eventId: string }> {
+    const eventRow = await sharedPool!.query<{ id: string }>(
+      `INSERT INTO events (event_id, tenant_id, visitor_id, journey_id, name, ts, inbound_payload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING id`,
+      [
+        event.event_id,
+        scenario.tenantId,
+        visitorId,
+        event.journey_id,
+        event.name,
+        event.ts,
+        JSON.stringify(event),
+      ],
+    );
+    const eventId = eventRow.rows[0]!.id;
+    const jobRow = await sharedPool!.query<{ id: string }>(
+      `INSERT INTO delivery_jobs
+         (tenant_id, event_id, destination_id, inbound_payload, attempts, status, next_attempt_at)
+       VALUES ($1, $2, $3, $4::jsonb, 0, 'pending', now() - interval '1 second')
+       RETURNING id`,
+      [scenario.tenantId, eventId, scenario.destinationId, JSON.stringify(event)],
+    );
+    return { jobId: jobRow.rows[0]!.id, eventId };
+  }
+
+  it("enricher — hop 6: purchase outbound carries em/ph even though inbound did not", async () => {
+    const scenario = await makeScenario(sharedPool!);
+    // Look up the visitor row created by makeScenario so we can INSERT
+    // events against a stable visitor_id/visitor_key.
+    const v = await sharedPool!.query<{ id: string; visitor_key: string }>(
+      `SELECT id, visitor_key FROM visitors WHERE tenant_id = $1 LIMIT 1`,
+      [scenario.tenantId],
+    );
+    const visitorRowId = v.rows[0]!.id;
+    const visitorKey = v.rows[0]!.visitor_key;
+
+    // Stamp identity on the visitor — the exact same call ingest makes on a
+    // `user_identified` event, inside its own transaction.
+    const tx = drizzle(sharedPool!, { schema: dbSchema });
+    await upsertIdentity(tx, {
+      tenantId: scenario.tenantId,
+      visitorKey,
+      identity: { email_sha256: HASH_EMAIL_ENR, phone_sha256: HASH_PHONE_ENR },
+    });
+
+    // Purchase with NO identity block on inbound — this is the
+    // returning-customer-no-form case the ticket targets.
+    const purchase: CanonicalEvent = {
+      event_id: crypto.randomUUID(),
+      journey_id: `j-hop6-${visitorKey}`,
+      visitor_id: visitorKey,
+      tenant_id: scenario.tenantId,
+      ts: new Date().toISOString(),
+      name: "purchase",
+      props: {
+        order_id: "o-1",
+        items: [{ sku: "SKU-1", quantity: 1, price_cents: 1000, currency: "USD" }],
+        value_cents: 1000,
+        currency: "USD",
+      },
+    };
+    const { jobId, eventId } = await makeEventJob(scenario, purchase, visitorRowId);
+
+    // Fake destination that records exactly what the adapter received.
+    const registry = new DestinationRegistry();
+    const observed: CanonicalEvent[] = [];
+    const fake = new FakeDestination();
+    Object.assign(fake, { provider: scenario.provider });
+    fake.script(scenario.tenantId, { kind: "ok" });
+    const origSend = fake.send.bind(fake);
+    fake.send = async (event, credentials) => {
+      observed.push(event);
+      return origSend(event, credentials);
+    };
+    registry.register(fake);
+
+    const worker = createWorker({
+      pool: sharedPool!,
+      registry,
+      logger: testLogger,
+      enricher: createEnricher({ pool: sharedPool! }),
+    });
+    const processed = await worker.processBatch();
+    expect(processed).toBe(1);
+
+    // Hop 6 proof: adapter saw the enriched event even though the persisted
+    // inbound row has no identity block.
+    expect(observed).toHaveLength(1);
+    expect(observed[0]!.identity?.email_sha256).toBe(HASH_EMAIL_ENR);
+    expect(observed[0]!.identity?.phone_sha256).toBe(HASH_PHONE_ENR);
+
+    const eventRow = await sharedPool!.query<{
+      inbound_payload: { identity?: unknown };
+      outbound_per_destination: Record<string, { event_id: string }>;
+    }>(
+      `SELECT inbound_payload, outbound_per_destination FROM events WHERE id = $1`,
+      [eventId],
+    );
+    expect(eventRow.rows[0]!.inbound_payload.identity).toBeUndefined();
+    expect(eventRow.rows[0]!.outbound_per_destination[scenario.destinationId]).toBeDefined();
+
+    const jobRow = await sharedPool!.query<{ status: string; attempts: number }>(
+      `SELECT status, attempts FROM delivery_jobs WHERE id = $1`,
+      [jobId],
+    );
+    expect(jobRow.rows[0]).toMatchObject({ status: "done", attempts: 1 });
+  });
+
+  it("enricher — N events carry identity forward; anonymous events pre-identify get nothing", async () => {
+    const scenario = await makeScenario(sharedPool!);
+    const v = await sharedPool!.query<{ id: string; visitor_key: string }>(
+      `SELECT id, visitor_key FROM visitors WHERE tenant_id = $1 LIMIT 1`,
+      [scenario.tenantId],
+    );
+    const visitorRowId = v.rows[0]!.id;
+    const visitorKey = v.rows[0]!.visitor_key;
+
+    const registry = new DestinationRegistry();
+    const observed: CanonicalEvent[] = [];
+    const fake = new FakeDestination();
+    Object.assign(fake, { provider: scenario.provider });
+    fake.script(scenario.tenantId, { kind: "ok" });
+    const orig = fake.send.bind(fake);
+    fake.send = async (e, c) => {
+      observed.push(e);
+      return orig(e, c);
+    };
+    registry.register(fake);
+
+    const worker = createWorker({
+      pool: sharedPool!,
+      registry,
+      logger: testLogger,
+      enricher: createEnricher({ pool: sharedPool! }),
+    });
+
+    // BEFORE identification — anonymous page_view stays anonymous downstream.
+    const preIdentify: CanonicalEvent = {
+      event_id: crypto.randomUUID(),
+      journey_id: `j-carry-${visitorKey}`,
+      visitor_id: visitorKey,
+      tenant_id: scenario.tenantId,
+      ts: new Date().toISOString(),
+      name: "page_view",
+      props: { path: "/pre" },
+    };
+    await makeEventJob(scenario, preIdentify, visitorRowId);
+    await worker.processBatch();
+    expect(observed.at(-1)?.identity).toBeUndefined();
+
+    // Identify.
+    const tx = drizzle(sharedPool!, { schema: dbSchema });
+    await upsertIdentity(tx, {
+      tenantId: scenario.tenantId,
+      visitorKey,
+      identity: { email_sha256: HASH_EMAIL_ENR },
+    });
+
+    // Three subsequent events all carry the stored identity.
+    for (const path of ["/a", "/b", "/c"]) {
+      const ev: CanonicalEvent = {
+        event_id: crypto.randomUUID(),
+        journey_id: `j-carry-${visitorKey}`,
+        visitor_id: visitorKey,
+        tenant_id: scenario.tenantId,
+        ts: new Date().toISOString(),
+        name: "page_view",
+        props: { path },
+      };
+      await makeEventJob(scenario, ev, visitorRowId);
+      await worker.processBatch();
+      expect(observed.at(-1)?.identity?.email_sha256).toBe(HASH_EMAIL_ENR);
+    }
+  });
+
+  it("enricher store — TTL cutoff: identity outside 180d is not returned", async () => {
+    const scenario = await makeScenario(sharedPool!);
+    const v = await sharedPool!.query<{ visitor_key: string }>(
+      `SELECT visitor_key FROM visitors WHERE tenant_id = $1 LIMIT 1`,
+      [scenario.tenantId],
+    );
+    const visitorKey = v.rows[0]!.visitor_key;
+
+    const tx = drizzle(sharedPool!, { schema: dbSchema });
+    const stampedAt = new Date("2026-01-01T00:00:00Z");
+    await upsertIdentity(tx, {
+      tenantId: scenario.tenantId,
+      visitorKey,
+      identity: { email_sha256: HASH_EMAIL_ENR },
+      now: stampedAt,
+    });
+
+    const stillFresh = await readStoredIdentity(
+      sharedPool!,
+      { tenantId: scenario.tenantId, visitorKey },
+      { now: new Date("2026-03-01T00:00:00Z") }, // 59d — inside TTL
+    );
+    expect(stillFresh?.email_sha256).toBe(HASH_EMAIL_ENR);
+
+    const expired = await readStoredIdentity(
+      sharedPool!,
+      { tenantId: scenario.tenantId, visitorKey },
+      { now: new Date("2026-08-01T00:00:00Z") }, // > 180d after stampedAt
+    );
+    expect(expired).toBeNull();
+  });
+
+  it("enricher store — cross-visitor isolation: identity for visitor A is never returned for visitor B", async () => {
+    const scenario = await makeScenario(sharedPool!);
+    const v = await sharedPool!.query<{ visitor_key: string }>(
+      `SELECT visitor_key FROM visitors WHERE tenant_id = $1 LIMIT 1`,
+      [scenario.tenantId],
+    );
+    const visitorKey = v.rows[0]!.visitor_key;
+
+    const tx = drizzle(sharedPool!, { schema: dbSchema });
+    await upsertIdentity(tx, {
+      tenantId: scenario.tenantId,
+      visitorKey,
+      identity: { email_sha256: HASH_EMAIL_ENR },
+    });
+
+    const stranger = await readStoredIdentity(sharedPool!, {
+      tenantId: scenario.tenantId,
+      visitorKey: `never-${visitorKey}`,
+    });
+    expect(stranger).toBeNull();
+  });
+
+  it("enricher store — visitor that never identified: read returns null", async () => {
+    const scenario = await makeScenario(sharedPool!);
+    const v = await sharedPool!.query<{ visitor_key: string }>(
+      `SELECT visitor_key FROM visitors WHERE tenant_id = $1 LIMIT 1`,
+      [scenario.tenantId],
+    );
+    const read = await readStoredIdentity(sharedPool!, {
+      tenantId: scenario.tenantId,
+      visitorKey: v.rows[0]!.visitor_key,
+    });
+    expect(read).toBeNull();
+  });
 });

@@ -80,6 +80,42 @@ this before proposing a different approach.
   `/api/events?since=<received_at>` — no SSE, no WebSocket. One less
   infra piece; the console is one-operator-per-tenant so polling load is
   trivial. Revisit only if polling starts costing meaningful DB time.
+- 2026-08-14 — T11 loader. The relay serves a per-tenant tracking snippet
+  from its own apex at `GET /l/<loader_path>.js`. `loader_path` is a
+  48-bit CSPRNG URL-safe base64 segment (`node:crypto.randomBytes(6)`)
+  stored on the `tenants` row, generated once at provisioning and NEVER
+  auto-rotated — rotating breaks cached storefront `<script src>` tags,
+  so it's a manual operator action if a path leaks. The snippet body has
+  no matchable literal for `POST /e`, no `facebook`/`fbq`/`_fbc`/`pixel`
+  strings, and assembles its ingest URL from three concatenated locals
+  (`host + "/" + endpoint`). It reuses the T12 cookie names (`tf_jid`,
+  `tf_vid`) so a page that also runs the T8 client shares one journey;
+  the T8 client stays intact and both delivery vehicles are deduped by
+  the server on `event_id`. The loader route is exempted from the
+  Host-based tenancy hook in `apps/relay/src/tenancy/middleware.ts`
+  because it identifies its tenant from the URL path, not the Host.
+- 2026-08-14 — T11 ad-blocker measurement is **deferred, not run**. The
+  loader code + storefront `<script src>` are in place; a real number
+  needs both Cloudflare tunnels up (`data.<A>` + `shop.<A>`), a browser
+  with uBlock Origin and Adblock Plus installed, and a full journey
+  driven manually. That environment couldn't be assembled from the CI/
+  worktree this ticket built in, so the honest record is: **before = ?,
+  after = ?, TODO to fill in on the first end-to-end run** using
+  `DevTools › Network` counts of successful `POST /e` per journey
+  (landing → view_item → add_to_cart → begin_checkout → purchase).
+  Two things we already know analytically:
+  - On the default uBlock + ABP lists, the T8 client's own `POST /e` to
+    `data.<domain>` is not on any filter we could find, so the baseline
+    "before" number is likely already at parity with a no-blocker
+    session. The loader's win over T8 alone is bounded by that.
+  - The measurable value shows up against aggressive custom lists
+    (EasyPrivacy sub-lists, enterprise filters) that DO block the
+    literal `/e` URL or the `data.*` host pattern. That's where the
+    randomised path + concatenated-URL source pays off, and where the
+    "after" number should exceed the "before". If the first real
+    measurement shows Y ≈ X on all lists we can throw at it, say so
+    honestly in this file and re-open the question of whether the
+    loader is earning its complexity.
 - 2026-08-14 — Relay's visitor cookie is `rly_vid`, `HttpOnly; Secure;
   SameSite=None; Partitioned; Max-Age=63072000`. `HttpOnly` is
   deliberate: T8's JS must not read it, and it makes zero difference to

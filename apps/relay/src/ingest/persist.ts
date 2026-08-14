@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "@trackify/db";
 import * as schema from "@trackify/db/schema";
 import type { CanonicalEvent } from "@trackify/shared";
+import { upsertIdentity } from "../enrich/store";
 import type { HashedIdentity } from "./hash";
 
 // Transactional persistence for a single event. On the happy path we write
@@ -57,6 +58,18 @@ export async function persistEvent(
       })
       .returning({ id: schema.visitors.id });
     if (!visitor) throw new Error("visitor upsert returned no row");
+
+    // On `user_identified`, merge the hashed identity block onto the
+    // visitor row so subsequent (anonymous) events can be enriched by the
+    // delivery worker (T13). Done in-transaction so the identity is either
+    // committed with the event or not at all.
+    if (params.event.name === "user_identified" && params.identity) {
+      await upsertIdentity(tx, {
+        tenantId: params.tenantId,
+        visitorKey: params.event.visitor_id,
+        identity: params.identity,
+      });
+    }
 
     // Build the persisted payload: the validated client event with raw PII
     // stripped from `identity`, plus a server-side sidecar under `server`.

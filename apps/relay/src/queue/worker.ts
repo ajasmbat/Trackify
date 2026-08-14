@@ -13,6 +13,15 @@ import {
 } from "./persist";
 import type { DestinationRegistry } from "./registry";
 
+/**
+ * Optional per-event transform run between reconstruction of the CanonicalEvent
+ * from the persisted inbound payload and the destination adapter's `send()`.
+ * The enricher (T13) is the only registered implementation today — it looks
+ * up stored hashed identity for the visitor and merges it into the event.
+ * A worker booted without one falls back to identity.
+ */
+export type EventEnricher = (event: CanonicalEvent) => Promise<CanonicalEvent>;
+
 // The delivery worker. One process runs the loop; multiple processes can run
 // side-by-side against the same Postgres and never claim the same job — the
 // concurrency guarantee is `FOR UPDATE SKIP LOCKED` inside `claimBatch`.
@@ -41,6 +50,13 @@ export interface WorkerOptions {
   rand?: () => number;
   /** Now() supplier — pinned in tests. */
   now?: () => Date;
+  /**
+   * Per-event transform applied AFTER reconstruction from the inbound
+   * payload and BEFORE the destination adapter's `send()`. Optional so the
+   * queue's own tests can run without any enricher wired in. Registered
+   * once at boot from `server.ts` (see `apps/relay/src/enrich/pipeline`).
+   */
+  enricher?: EventEnricher;
 }
 
 export interface Worker {
@@ -61,6 +77,7 @@ export function createWorker(opts: WorkerOptions): Worker {
     idlePollMs = 1_000,
     rand = Math.random,
     now = () => new Date(),
+    enricher,
   } = opts;
 
   let running = false;
@@ -146,11 +163,25 @@ export function createWorker(opts: WorkerOptions): Worker {
       return;
     }
 
-    // 2. Reconstruct the CanonicalEvent from the persisted inbound payload
-    //    and hand it to the adapter. Any throw is a transient failure —
-    //    better to retry than to silently drop a conversion on an adapter bug.
+    // 2. Reconstruct the CanonicalEvent from the persisted inbound payload,
+    //    run the registered enricher (T13 — merges stored hashed identity
+    //    onto anonymous events), then hand it to the adapter. Any throw is
+    //    a transient failure — better to retry than to silently drop a
+    //    conversion on an adapter bug OR an enricher DB blip.
     let result: SendResult;
-    const event = job.inboundPayload as CanonicalEvent;
+    const inbound = job.inboundPayload as CanonicalEvent;
+    let event: CanonicalEvent;
+    try {
+      event = enricher ? await enricher(inbound) : inbound;
+    } catch (err) {
+      await scheduleRetryOrDeadLetter(
+        ctx,
+        attemptNumber,
+        `enricher_threw: ${errorMessage(err)}`,
+        jobLog,
+      );
+      return;
+    }
     try {
       result = await destination.send(event, credentials);
     } catch (err) {
