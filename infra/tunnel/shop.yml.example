@@ -1,0 +1,22 @@
+# Cloudflare Tunnel A — the storefront apex (`<A>`).
+# Copy to `shop.yml` and fill the two placeholders. See infra/README.md.
+#
+#   TUNNEL_A_ID           — UUID printed by `cloudflared tunnel create trackify-shop`
+#   TUNNEL_A_CREDENTIALS  — path to the JSON credentials file that command writes
+#                           (typically `~/.cloudflared/<TUNNEL_A_ID>.json`)
+#   APEX_A                — the first apex you own (e.g. `example.dev`)
+
+tunnel: TUNNEL_A_ID
+credentials-file: TUNNEL_A_CREDENTIALS
+
+ingress:
+  # Storefront → Next.js dev server on STOREFRONT_PORT
+  - hostname: shop.APEX_A
+    service: http://localhost:3000
+
+  # Relay → Fastify on RELAY_PORT
+  - hostname: data.APEX_A
+    service: http://localhost:3003
+
+  # Catch-all — required last rule
+  - service: http_status:404
