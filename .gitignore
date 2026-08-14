@@ -1,0 +1,23 @@
+node_modules
+.pnpm-store
+dist
+.next
+next-env.d.ts
+.turbo
+coverage
+*.log
+.DS_Store
+
+# env
+.env
+.env.local
+.env.*.local
+
+# runtime
+.tsbuildinfo
+*.tsbuildinfo
+
+# Fredrin — commit the committed docs, ignore per-session session tooling.
+.fredrin/*
+!.fredrin/FREDRIN.md
+!.fredrin/setup.sh
