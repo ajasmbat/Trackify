@@ -1,3 +1,4 @@
 # Rendered per-developer configs — never commit tunnel IDs / credential paths.
 shop.yml
 ad.yml
+sgtm.yml
