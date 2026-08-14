@@ -169,30 +169,27 @@ describe("warnIfTestEventInProduction", () => {
   });
 });
 
-// The one thing that keeps Meta's field-name vocabulary contained to this
-// folder is this test. If it fails, DO NOT sprinkle the term into other files —
-// route the code through this module or extend its API.
+// The one thing that keeps Meta's OUTBOUND payload envelope contained to
+// this folder is this test. If it fails, DO NOT sprinkle the term into
+// other files — route the code through this module or extend its API.
+//
+// Note on graduated vocabulary: `fbc`, `fbp`, `client_user_agent`,
+// `client_ip_address`, and the Meta pixel event names (`PageView`,
+// `ViewContent`, `AddToCart`, `InitiateCheckout`, `content_ids`) are NOT
+// listed here — they have graduated to shared visitor-identity /
+// storefront-pixel vocabulary (T4 ingest server sidecar; T8 pixel; T12
+// cookie service). Only tokens that describe Meta's CAPI envelope
+// structure or its endpoint stay contained.
 describe("meta field-name containment", () => {
   const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..", "..");
   const META_FOLDER = resolve(__dirname);
-  // Names that only Meta uses. Care: exclude generic tokens (`data`, `value`,
-  // `currency`) that would false-positive on unrelated code.
   const META_TERMS = [
     "event_source_url",
     "action_source",
     "user_data",
     "custom_data",
-    "content_ids",
     "test_event_code",
-    "fbc",
-    "fbp",
     "fbtrace_id",
-    "client_user_agent",
-    "client_ip_address",
-    "PageView",
-    "ViewContent",
-    "AddToCart",
-    "InitiateCheckout",
     "CompleteRegistration",
     "graph.facebook.com",
   ];
