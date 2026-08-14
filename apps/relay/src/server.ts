@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { logger, pinoOptions, withRequestContext } from "@trackify/shared";
 import { env } from "./env";
 import { registerModules } from "./modules/index";
+import { bootWorker, DestinationRegistry } from "./queue/index";
 
 // Fastify with pino JSON logging. Every log line — from Fastify itself and
 // from any module — carries `request_id`; when the request has a `journey_id`
@@ -68,6 +69,22 @@ app.addHook("onResponse", (_req, reply, done) => {
 app.get("/healthz", async () => ({ ok: true }));
 
 await registerModules(app);
+
+// Delivery worker (T5). Owns its own pg.Pool so a slow destination call
+// cannot starve the ingest side of connections. Adapters are registered
+// here at boot (T6 wires in Meta) — the queue itself never imports one.
+const registry = new DestinationRegistry();
+// registry.register(new MetaDestination()); // T6 lands and wires this line.
+
+const workerBoot = bootWorker({
+  databaseUrl: env.DATABASE_URL,
+  registry,
+});
+workerBoot.worker.start();
+
+app.addHook("onClose", async () => {
+  await workerBoot.shutdown();
+});
 
 app.listen({ port: env.RELAY_PORT, host: "0.0.0.0" }).catch((err) => {
   logger().fatal({ err: err.message }, "relay failed to start");
