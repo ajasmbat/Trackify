@@ -6,6 +6,7 @@ import {
   registerInternalRoutes,
   type InternalRoutesDeps,
 } from "./routes/internal";
+import { registerLoaderRoutes, type LoaderDeps } from "./routes/loader";
 import { registerProxyRoutes, type ProxyDeps } from "./routes/proxy";
 import type { SgtmContainerRepo } from "./repo";
 
@@ -17,6 +18,7 @@ export interface BuildAppOptions {
   logger?: boolean;
   proxyCacheTtlMs?: number;
   provisionerOverrides?: InternalRoutesDeps["provisionerOverrides"];
+  loaderOverrides?: Pick<LoaderDeps, "upstream">;
 }
 
 // Build a fully-registered Fastify instance. Extracted from server.ts so the
@@ -74,6 +76,14 @@ export async function buildApp(
     docker: opts.docker,
     image: opts.image,
     provisionerOverrides: opts.provisionerOverrides,
+  });
+
+  // Custom Loader (T20). Registered BEFORE the wildcard proxy so `/gtm.js`
+  // resolves to Fastify's own route — the proxy's onRequest hook has a
+  // matching bypass so it does not intercept `/gtm.js` requests.
+  await registerLoaderRoutes(app, {
+    apex: opts.apex,
+    ...opts.loaderOverrides,
   });
 
   // Proxy routes must be registered LAST — they own `/*`, which Fastify
