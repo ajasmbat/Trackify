@@ -12,6 +12,10 @@ const schema = commonEnv
   .merge(
     z.object({
       RELAY_PORT: z.coerce.number().int().positive(),
+      // Optional. When set, the cookie service writes it as the `Domain=`
+      // attribute on rly_vid / tf_jid. Leave unset to get a host-only
+      // cookie (dev / test).
+      RELAY_COOKIE_DOMAIN: z.string().min(1).optional(),
     }),
   );
 

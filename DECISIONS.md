@@ -80,3 +80,24 @@ this before proposing a different approach.
   `/api/events?since=<received_at>` — no SSE, no WebSocket. One less
   infra piece; the console is one-operator-per-tenant so polling load is
   trivial. Revisit only if polling starts costing meaningful DB time.
+- 2026-08-14 — Relay's visitor cookie is `rly_vid`, `HttpOnly; Secure;
+  SameSite=None; Partitioned; Max-Age=63072000`. `HttpOnly` is
+  deliberate: T8's JS must not read it, and it makes zero difference to
+  Safari's ITP survival (see `docs/measurements/safari-cookie-longevity.md`).
+  `Partitioned` (CHIPS) is required alongside `SameSite=None` in
+  Chrome 2024+; it also shortens the server-set survival number under
+  ITP — that is called out in the measurement doc. The optional
+  `RELAY_COOKIE_DOMAIN` env pins the `Domain=` attribute in production;
+  omitted in dev to get host-only.
+- 2026-08-14 — Journey continuity uses a second, JS-visible cookie
+  `tf_jid` (no `HttpOnly`). Splitting visitor identity (`rly_vid`,
+  HttpOnly) from journey state (`tf_jid`, JS-readable) keeps the
+  loader / pixel free of any need to read the visitor id while still
+  letting client + server agree on the same journey.
+- 2026-08-14 — `visitors.fbc` / `visitors.fbp` persist server-side. The
+  cookie service upserts them on every ingest that carries `_fbc` (or
+  a URL `fbclid`) / `_fbp`, so a later event with no client `_fbc`
+  can still ship `fbc` on the outbound Meta payload once T13's
+  enricher lands. Persistence is composed at T12's `onResponse` hook —
+  not inside T4's route handler — so T4's ownership boundary stays
+  clean and a persistence failure never turns a 202 into a 5xx.

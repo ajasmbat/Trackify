@@ -8,8 +8,11 @@ import {
 } from "drizzle-orm/pg-core";
 import { tenants } from "./tenants";
 
-// One row per stable visitor (first-party cookie in T7). Identity fields are
-// merged in as they arrive; store the SHA-256 hashes we send to destinations.
+// One row per stable visitor. Identity fields are merged in as they arrive;
+// store the SHA-256 hashes we send to destinations. `fbc` / `fbp` are
+// persisted server-side by T12 so subsequent events (once the browser has
+// dropped `_fbc`) still carry them into the outbound Meta payload — that
+// server-side survival is the whole point of the cookie service.
 export const visitors = pgTable(
   "visitors",
   {
@@ -26,6 +29,8 @@ export const visitors = pgTable(
       }>()
       .notNull()
       .default({}),
+    fbc: text("fbc"),
+    fbp: text("fbp"),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
