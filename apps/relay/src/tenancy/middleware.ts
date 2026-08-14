@@ -40,7 +40,13 @@ export interface InstallTenancyOptions {
   exempt?: (req: FastifyRequest) => boolean;
 }
 
-const defaultExempt = (req: FastifyRequest): boolean => req.url === "/healthz";
+const defaultExempt = (req: FastifyRequest): boolean => {
+  const url = req.url;
+  // `/l/…` is the T11 loader route — it identifies its tenant by the
+  // randomised path segment, not by the Host header, so it runs its own
+  // lookup without any Host-based resolution happening first.
+  return url === "/healthz" || url.startsWith("/l/");
+};
 
 /**
  * Register the tenancy hook on `app` (root instance). Attaches decrypted

@@ -9,6 +9,11 @@ export const tenants = pgTable("tenants", {
     .array()
     .notNull()
     .default([]),
+  // Randomised per-tenant path for the T11 tracking snippet. Generated once
+  // on provisioning (min 40 bits of entropy, URL-safe alphabet); rotating it
+  // is a manual operator action because it breaks cached storefront script
+  // tags. Unique so a leaked path can't collide when re-issued.
+  loaderPath: text("loader_path").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
