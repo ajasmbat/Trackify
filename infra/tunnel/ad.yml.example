@@ -1,0 +1,19 @@
+# Cloudflare Tunnel B — the ad-network apex (`<B>`).
+# MUST be a different apex from `<A>` — sibling subdomains are same-site to the
+# browser and hide real cross-site cookie behaviour. See infra/README.md.
+#
+#   TUNNEL_B_ID           — UUID printed by `cloudflared tunnel create trackify-ad`
+#   TUNNEL_B_CREDENTIALS  — path to the JSON credentials file that command writes
+#                           (typically `~/.cloudflared/<TUNNEL_B_ID>.json`)
+#   APEX_B                — the second, unrelated apex (e.g. `some-other.xyz`)
+
+tunnel: TUNNEL_B_ID
+credentials-file: TUNNEL_B_CREDENTIALS
+
+ingress:
+  # Ad network → Next.js dev server on AD_NETWORK_PORT
+  - hostname: ads.APEX_B
+    service: http://localhost:3001
+
+  # Catch-all — required last rule
+  - service: http_status:404
