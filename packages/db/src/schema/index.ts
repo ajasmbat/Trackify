@@ -4,3 +4,4 @@ export * from "./destinations";
 export * from "./visitors";
 export * from "./events";
 export * from "./delivery-jobs";
+export * from "./sgtm";
