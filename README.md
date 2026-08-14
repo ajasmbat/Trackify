@@ -12,16 +12,31 @@ You need Node 20+, pnpm 9, and Docker.
 ```sh
 pnpm install
 docker compose up -d          # Postgres 16 on :5432
-cp .env.example .env          # fill in CREDENTIAL_KEY_HEX + the three *_URL vars
-pnpm db:push && pnpm seed     # schema + demo tenant
+cp .env.example .env          # fill in CREDENTIAL_KEY_HEX + AUTH_SECRET
+pnpm db:push && pnpm seed     # schema + demo tenants
 pnpm dev                      # storefront:3000, ad-network:3001, console:3002, relay:3003
 ```
+
+Then open `http://localhost:3001`, click the ad, and the click should land as a
+row on `http://localhost:3002/events` within a few seconds. The seed attaches
+`localhost` to the acme tenant and adds the storefront + ad-network origins to
+its CORS allowlist so the localhost flow works with zero manual DB edits — see
+[HTTPS dev environment](#https-dev-environment--required) below for the real
+cross-site cookie setup you'll want once you're past the smoke test.
+
+**Empty console after clicking the ad?** Open the storefront's DevTools →
+Network tab and confirm the click POSTs to `http://localhost:3003/e` with a 2xx
+response. If it POSTs to `https://data.example.dev/e` instead, your `.env`'s
+`NEXT_PUBLIC_RELAY_URL` was set at build time — restart `pnpm dev` after
+editing.
 
 ## HTTPS dev environment — **required**
 
 Trackify's whole reason for existing is server-side tracking around cookies,
-and every browser lies about cookies on `localhost`. You will build the wrong
-thing if you develop against `http://localhost`.
+and every browser lies about cookies on `localhost`. The localhost Quickstart
+above still runs the full flow end-to-end, but cookie stitching (visitor
+identity, `fbc`/`fbp` persistence) is degraded on `localhost` — you will build
+the wrong thing if you rely on it. Use the tunnels for anything cookie-related.
 
 Instead we run two Cloudflare Tunnels giving three real HTTPS URLs on **two
 different apex domains**:
