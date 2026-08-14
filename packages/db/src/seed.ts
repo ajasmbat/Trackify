@@ -14,6 +14,7 @@ async function main() {
       slug: "acme",
       name: "Acme Widgets",
       hostname: "shop.acme.test",
+      allowedOrigins: ["https://shop.acme.test"],
       destination: {
         provider: "meta",
         config: { pixel_id: "111111111111111", dataset_id: "111111111111111" },
@@ -24,6 +25,7 @@ async function main() {
       slug: "globex",
       name: "Globex Corp",
       hostname: "shop.globex.test",
+      allowedOrigins: ["https://shop.globex.test"],
       destination: {
         provider: "meta",
         config: { pixel_id: "222222222222222", dataset_id: "222222222222222" },
@@ -35,10 +37,14 @@ async function main() {
   for (const t of seedTenants) {
     const [tenant] = await client
       .insert(tenants)
-      .values({ slug: t.slug, name: t.name })
+      .values({
+        slug: t.slug,
+        name: t.name,
+        allowedOrigins: [...t.allowedOrigins],
+      })
       .onConflictDoUpdate({
         target: tenants.slug,
-        set: { name: t.name },
+        set: { name: t.name, allowedOrigins: [...t.allowedOrigins] },
       })
       .returning();
     if (!tenant) throw new Error(`failed to upsert tenant ${t.slug}`);
