@@ -36,3 +36,21 @@ this before proposing a different approach.
 - 2026-08-14 — `packages/shared` is FROZEN once this ticket merges. Downstream
   tickets that need a change to shared contracts must request an amendment
   ticket, not edit here.
+- 2026-08-14 — `apps/ad-network` does NOT import from `packages/shared`. It
+  simulates an external ad network, so it must not share code with our own
+  services. Its own tiny env validator + fbclid generator live under
+  `apps/ad-network/src/lib`.
+- 2026-08-14 — Fake `fbclid` shape: `IwAR` prefix + 36 URL-safe base64 chars
+  (27 random bytes, base64url) = 40 chars total. Matches Meta's observed
+  pattern in the wild. Reference: Meta's public docs on the Click Identifier —
+  <https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/fbp-and-fbc/>
+  — where `fbc` is `fb.<subdomain>.<creation>.<fbclid>` and `fbclid` is treated
+  as an opaque token starting with `IwAR`.
+- 2026-08-14 — Ad-network sets `Referrer-Policy: strict-origin-when-cross-origin`
+  on every response. Real Facebook goes further and strips the path
+  (`Referer: https://l.facebook.com/`) via its `l.facebook.com` redirector +
+  policy; our storefront will see `Referer: https://<ad-network-apex>` (origin
+  only, path stripped by the policy). Difference from real Facebook: the
+  hostname is our ad-network apex rather than `l.facebook.com`. Downstream
+  tests must match on "origin equals ad-network apex", not on
+  `facebook.com`.
