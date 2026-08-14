@@ -126,8 +126,10 @@ describe("proxy — Host-based routing", () => {
       containerState: { hostPort: container.port },
     });
 
+    // Not /gtm.js — that path belongs to the T20 loader and is exempted
+    // from container forwarding by design.
     const res = await raw(appPort(), {
-      path: "/gtm.js",
+      path: "/gtag/js",
       host: "acme.sgtm.example.dev",
     });
     expect(res.status).toBe(200);

@@ -1,0 +1,26 @@
+# Cloudflare Tunnel C — the sGTM wildcard on apex `<A>`.
+# Routes every `<sub>.sgtm.APEX_A` request to the local sgtm-host reverse
+# proxy, which peels the subdomain off the Host header and dispatches to the
+# matching per-tenant container. See infra/README.md → "Third tunnel: sGTM
+# wildcard" for the one-time DNS + wildcard-cert setup.
+#
+#   TUNNEL_C_ID           — UUID printed by `cloudflared tunnel create trackify-sgtm`
+#   TUNNEL_C_CREDENTIALS  — path to the JSON credentials file that command writes
+#                           (typically `~/.cloudflared/<TUNNEL_C_ID>.json`)
+#   APEX_A                — the same first apex used in shop.yml (e.g. `example.dev`);
+#                           the wildcard `*.sgtm.APEX_A` MUST match the trailing
+#                           chars of `SGTM_HOST_APEX` in .env (e.g. `sgtm.example.dev`).
+
+tunnel: TUNNEL_C_ID
+credentials-file: TUNNEL_C_CREDENTIALS
+
+ingress:
+  # Wildcard sGTM subdomains → sgtm-host on SGTM_HOST_PORT.
+  # Do NOT add `originRequest.httpHostHeader` here: sgtm-host peels the
+  # tenant subdomain off the incoming Host header, and cloudflared's default
+  # is to forward that header unchanged.
+  - hostname: "*.sgtm.APEX_A"
+    service: http://localhost:3004
+
+  # Catch-all — required last rule.
+  - service: http_status:404
