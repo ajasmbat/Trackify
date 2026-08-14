@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "pnpm --filter @trackify/db seed",
-    "db:push": "pnpm --filter @trackify/db push"
+    "db:push": "pnpm --filter @trackify/db push",
+    "tunnel": "sh infra/tunnel/run.sh"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
