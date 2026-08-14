@@ -4,6 +4,7 @@ import { logger, pinoOptions, withRequestContext } from "@trackify/shared";
 import { env } from "./env";
 import { registerModules } from "./modules/index";
 import { bootWorker, DestinationRegistry } from "./queue/index";
+import { createEnricher } from "./enrich/pipeline";
 
 // Fastify with pino JSON logging. Every log line — from Fastify itself and
 // from any module — carries `request_id`; when the request has a `journey_id`
@@ -76,9 +77,13 @@ await registerModules(app);
 const registry = new DestinationRegistry();
 // registry.register(new MetaDestination()); // T6 lands and wires this line.
 
+// Enrich each event with the visitor's stored hashed identity before the
+// destination adapter sees it (T13). The enricher reads through the worker's
+// own pool so it never contends with ingest for connections.
 const workerBoot = bootWorker({
   databaseUrl: env.DATABASE_URL,
   registry,
+  enricherFactory: (pool) => createEnricher({ pool }),
 });
 workerBoot.worker.start();
 
