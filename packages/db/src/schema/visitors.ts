@@ -26,6 +26,11 @@ export const visitors = pgTable(
       }>()
       .notNull()
       .default({}),
+    // Set the first time a `user_identified` event lands hashed identity onto
+    // this visitor; refreshed on every subsequent user_identified. The
+    // enricher (T13) uses this as the TTL anchor — an identity older than the
+    // configured window is treated as unknown.
+    identifiedAt: timestamp("identified_at", { withTimezone: true }),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -5,7 +5,12 @@ import { createWorker, type Worker, type WorkerOptions } from "./worker";
 import { DestinationRegistry } from "./registry";
 
 export { DestinationRegistry } from "./registry";
-export { createWorker, type Worker, type WorkerOptions } from "./worker";
+export {
+  createWorker,
+  type Worker,
+  type WorkerOptions,
+  type EventEnricher,
+} from "./worker";
 export { claimBatch, persistDone, persistRetry, persistDeadLetter } from "./persist";
 export { classify, type Outcome } from "./classify";
 export { nextAttemptAt, baseDelayMs, jitterMs, MAX_ATTEMPTS } from "./backoff";
@@ -22,7 +27,14 @@ export interface BootOptions {
   registry: DestinationRegistry;
   logger?: Logger;
   poolSize?: number;
-  workerOptions?: Omit<WorkerOptions, "pool" | "registry" | "logger">;
+  workerOptions?: Omit<WorkerOptions, "pool" | "registry" | "logger" | "enricher">;
+  /**
+   * Callback that builds the enricher with the worker's own pool. Kept as a
+   * factory (rather than a bare `enricher`) because the pool is created here
+   * and the enricher needs to read through it. Optional so tests can boot the
+   * worker without wiring identity enrichment.
+   */
+  enricherFactory?: (pool: Pool) => import("./worker").EventEnricher;
 }
 
 export interface Booted {
@@ -48,6 +60,7 @@ export function bootWorker(opts: BootOptions): Booted {
     pool,
     registry: opts.registry,
     logger: log,
+    enricher: opts.enricherFactory?.(pool),
     ...opts.workerOptions,
   });
   return {
