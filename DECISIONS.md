@@ -63,3 +63,20 @@ this before proposing a different approach.
   hostname is our ad-network apex rather than `l.facebook.com`. Downstream
   tests must match on "origin equals ad-network apex", not on
   `facebook.com`.
+- 2026-08-14 — Console auth is Auth.js v5 (next-auth beta) with a
+  single-operator Credentials provider driven by env
+  (`CONSOLE_USERNAME` / `CONSOLE_PASSWORD` + `AUTH_SECRET`). Picked over
+  Clerk to avoid a hosted-service signup for a single-operator dev tool, and
+  over hand-rolled cookies because Auth.js manages the session JWT + CSRF.
+  When the console grows a real team, swap the provider (GitHub / Google /
+  SSO) without touching the rest of the app — the layout only consumes
+  `auth()`.
+- 2026-08-14 — Console reads Postgres directly via Drizzle, never via the
+  relay. A dedicated `CONSOLE_DATABASE_URL` optionally points at a
+  read-only role; in dev it falls back to `DATABASE_URL`. The console's
+  query layer never SELECTs `destinations.credentials_encrypted`, so a
+  misconfigured dev DB won't leak the ciphertext either.
+- 2026-08-14 — Console live tail is client-side polling every 2s against
+  `/api/events?since=<received_at>` — no SSE, no WebSocket. One less
+  infra piece; the console is one-operator-per-tenant so polling load is
+  trivial. Revisit only if polling starts costing meaningful DB time.
