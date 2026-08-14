@@ -36,6 +36,15 @@ this before proposing a different approach.
 - 2026-08-14 — `packages/shared` is FROZEN once this ticket merges. Downstream
   tickets that need a change to shared contracts must request an amendment
   ticket, not edit here.
+- 2026-08-14 — Dev HTTPS via **Cloudflare Tunnel** (`cloudflared`), not ngrok.
+  Two named tunnels on two apexes: storefront + relay on `<A>`, ad network on
+  `<B>`. Cloudflared gives free stable custom-domain subdomains (ngrok's free
+  tier reshuffles the hostname each restart), a single dashboard for DNS +
+  cert issuance, and it survives laptop reboots. Tradeoff: requires each dev
+  to own two apex domains and move their nameservers to Cloudflare — a
+  documented one-time cost (see `infra/README.md`) and cheaper than debugging
+  fake cookie behaviour later. `localhost` is banned outright: browsers treat
+  it specially and lie about SameSite/Secure.
 - 2026-08-14 — `apps/ad-network` does NOT import from `packages/shared`. It
   simulates an external ad network, so it must not share code with our own
   services. Its own tiny env validator + fbclid generator live under
