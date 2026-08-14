@@ -10,6 +10,7 @@
     "dev": "pnpm -r --parallel --stream --if-present dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "pnpm --filter @trackify/db seed",

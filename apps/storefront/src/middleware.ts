@@ -5,8 +5,7 @@ import type { NextRequest } from "next/server";
 // downstream log line for this request can carry it. journey_id is passed
 // through untouched (T8's loader mints it).
 export function middleware(req: NextRequest) {
-  const requestId =
-    req.headers.get("x-request-id") ?? crypto.randomUUID();
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-request-id", requestId);
 

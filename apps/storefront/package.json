@@ -6,7 +6,8 @@
     "dev": "dotenv -e ../../.env -- next dev -p 3000",
     "build": "next build",
     "start": "dotenv -e ../../.env -- next start -p 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src"
   },
   "dependencies": {
     "@trackify/shared": "workspace:*",
@@ -15,6 +16,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
