@@ -32,6 +32,48 @@ See `.env.example` for the full list. Required:
 - `SGTM_HOST_DOCKER` — `docker` (default) or `mock` (for CI/tests).
 - `SGTM_HOST_IMAGE` — Google's sGTM image; pin to a digest in prod.
 - `DATABASE_URL` — same Postgres the rest of the stack uses.
+- `SGTM_GEO_BACKEND` — `cloudflare` (default), `maxmind`, or `off` (T22).
+- `SGTM_MAXMIND_DB_PATH` — path to a GeoLite2-City `.mmdb`. Required only
+  when `SGTM_GEO_BACKEND=maxmind`.
+
+## GEO enrichment (T22)
+
+Every proxied request is augmented with request-scoped
+`X-Geo-Country` / `X-Geo-Region` / `X-Geo-City` / `X-Geo-Postal` headers so
+the container's GTM tags can read them as variables. Missing fields are
+omitted (never sent as `""`). Two backends:
+
+- **`cloudflare`** (default): reads `CF-IPCountry`, `CF-Region-Code`
+  (fallback `CF-Region`), `CF-IPCity`, `CF-Postal-Code` — headers Cloudflare
+  already stamps when the *"Add visitor location headers"* managed transform
+  is enabled. Zero-config in the T18 tunnel setup. Sentinel values (`XX`,
+  `T1`) are dropped rather than forwarded.
+- **`maxmind`**: loads a local GeoLite2-City DB once at startup (60MB+;
+  memory-mapped, synchronous `get`), then looks up the request's client IP.
+  IP is taken from `CF-Connecting-IP`, else the first hop of
+  `X-Forwarded-For`, else the raw socket peer.
+- **`off`**: no enrichment. Still strips inbound `X-Geo-*` — the browser is
+  never trusted to set these.
+
+Per-container opt-out: the `sgtm_containers.geo_headers_enabled` column
+defaults to `true`. Flip it to `false` on a specific container to skip
+injection (the strip still runs, so a forged inbound header cannot leak
+through). Backend selection is process-wide; per-container backend is a
+Wave 7+ follow-up.
+
+### Acquiring the MaxMind DB
+
+MaxMind's free GeoLite2 databases require a (free) license key from
+maxmind.com and are redistributable with attribution:
+
+```
+curl -L -u<ACCOUNT>:<MAXMIND_LICENSE_KEY> \
+  "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&suffix=tar.gz" \
+  | tar xz --strip-components=1 -C /var/lib/maxmind
+export SGTM_MAXMIND_DB_PATH=/var/lib/maxmind/GeoLite2-City.mmdb
+```
+
+Trackify does **not** ship the DB — ops downloads it and points at the file.
 
 ## Docker client choice
 

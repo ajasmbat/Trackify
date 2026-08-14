@@ -9,6 +9,7 @@ import {
 import { registerLoaderRoutes, type LoaderDeps } from "./routes/loader";
 import { registerProxyRoutes, type ProxyDeps } from "./routes/proxy";
 import type { SgtmContainerRepo } from "./repo";
+import type { GeoBackend } from "./geo";
 
 export interface BuildAppOptions {
   repo: SgtmContainerRepo;
@@ -19,6 +20,10 @@ export interface BuildAppOptions {
   proxyCacheTtlMs?: number;
   provisionerOverrides?: InternalRoutesDeps["provisionerOverrides"];
   loaderOverrides?: Pick<LoaderDeps, "upstream">;
+  // T22: process-wide GEO backend, or `null` for `off` (still strips inbound
+  // X-Geo-* — just never re-injects). Omitted in existing callers → geo is
+  // effectively off (headers still stripped) and no injection occurs.
+  geo?: GeoBackend | null;
 }
 
 // Build a fully-registered Fastify instance. Extracted from server.ts so the
@@ -94,6 +99,7 @@ export async function buildApp(
     repo: opts.repo,
     apex: opts.apex,
     cacheTtlMs: opts.proxyCacheTtlMs,
+    geo: opts.geo ?? null,
   };
   await registerProxyRoutes(app, proxy);
 
