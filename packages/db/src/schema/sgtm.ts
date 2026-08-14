@@ -4,6 +4,7 @@ import {
   timestamp,
   uuid,
   jsonb,
+  boolean,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -40,6 +41,14 @@ export const sgtmContainers = pgTable(
       .notNull()
       .default({}),
     previewServerUrl: text("preview_server_url"),
+    // T21 · Cookie Keeper — when true, the reverse proxy rewrites every
+    // Set-Cookie the container emits into a sealed HttpOnly first-party
+    // `sgtm_<hash>` cookie and restores the original name/value on inbound
+    // requests. Default off; flipping it on invalidates any live cookies
+    // set under the previous mode (the browser sees a fresh name).
+    cookieKeeperEnabled: boolean("cookie_keeper_enabled")
+      .notNull()
+      .default(false),
     lastError: text("last_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

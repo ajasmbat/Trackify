@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "dotenv -e ../../.env -- tsx watch src/server.ts",
     "start": "dotenv -e ../../.env -- tsx src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm -w exec vitest run apps/sgtm-host/src"
   },
   "dependencies": {
     "@trackify/db": "workspace:*",

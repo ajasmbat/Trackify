@@ -1,6 +1,10 @@
 import http from "node:http";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { SgtmContainerRepo } from "../repo";
+import {
+  restoreCookieHeader,
+  rewriteSetCookies,
+} from "../cookies/keeper";
 
 // Host-based streaming reverse proxy. Given a request for
 // `<subdomain>.sgtm.<apex>`, look up the container by subdomain and stream
@@ -39,6 +43,7 @@ type ContainerState = { hostPort?: number };
 interface RouteTarget {
   hostPort: number;
   containerId: string;
+  cookieKeeperEnabled: boolean;
 }
 
 export async function registerProxyRoutes(
@@ -63,6 +68,7 @@ export async function registerProxyRoutes(
     const target: RouteTarget = {
       hostPort: state.hostPort,
       containerId: row.id,
+      cookieKeeperEnabled: row.cookieKeeperEnabled,
     };
     if (ttl > 0) cache.set(subdomain, { target, expires: now + ttl });
     return target;
@@ -80,6 +86,22 @@ export async function registerProxyRoutes(
       upstreamHeaders[k] = v;
     }
 
+    // Cookie Keeper — inbound restore. The browser sends us the sealed
+    // `sgtm_<hash>=<sealed>` cookies; the container expects the original
+    // names. Do this BEFORE hijacking so an unseal failure can still fail
+    // fast into Fastify's error path. When the header is empty after
+    // restoring (every sealed cookie was tampered), drop it entirely so we
+    // don't ship an empty `Cookie:` header upstream.
+    if (target.cookieKeeperEnabled) {
+      const raw = upstreamHeaders["cookie"];
+      const cookieHeader = Array.isArray(raw) ? raw.join("; ") : raw;
+      if (typeof cookieHeader === "string" && cookieHeader.length > 0) {
+        const restored = await restoreCookieHeader(cookieHeader);
+        if (restored) upstreamHeaders["cookie"] = restored;
+        else delete upstreamHeaders["cookie"];
+      }
+    }
+
     reply.hijack();
 
     const upstreamReq = http.request({
@@ -92,16 +114,35 @@ export async function registerProxyRoutes(
 
     await new Promise<void>((done, fail) => {
       upstreamReq.on("response", (upstream) => {
-        const forwarded: Record<string, string | string[]> = {};
-        for (const [k, v] of Object.entries(upstream.headers)) {
-          if (v === undefined) continue;
-          if (HOP_BY_HOP.has(k.toLowerCase())) continue;
-          forwarded[k] = v;
-        }
-        reply.raw.writeHead(upstream.statusCode ?? 502, forwarded);
-        upstream.on("end", () => done());
-        upstream.on("error", fail);
-        upstream.pipe(reply.raw);
+        void (async () => {
+          try {
+            const forwarded: Record<string, string | string[]> = {};
+            for (const [k, v] of Object.entries(upstream.headers)) {
+              if (v === undefined) continue;
+              if (HOP_BY_HOP.has(k.toLowerCase())) continue;
+              forwarded[k] = v;
+            }
+
+            // Cookie Keeper — outbound rewrite. Node parses multi-value
+            // Set-Cookie into an array; preserve the array shape so
+            // writeHead emits one header per cookie instead of collapsing
+            // to a comma-joined string (which browsers won't split back).
+            if (target.cookieKeeperEnabled) {
+              const raw = forwarded["set-cookie"];
+              if (raw !== undefined) {
+                const asArray = Array.isArray(raw) ? raw : [raw];
+                forwarded["set-cookie"] = await rewriteSetCookies(asArray);
+              }
+            }
+
+            reply.raw.writeHead(upstream.statusCode ?? 502, forwarded);
+            upstream.on("end", () => done());
+            upstream.on("error", fail);
+            upstream.pipe(reply.raw);
+          } catch (err) {
+            fail(err);
+          }
+        })();
       });
       upstreamReq.on("error", fail);
       // Pipe the untouched raw request body to the upstream. Because we
