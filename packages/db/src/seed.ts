@@ -1,6 +1,18 @@
+import { randomBytes } from "node:crypto";
 import { db, encryptCredentials } from "./index";
 import { tenants, hostnames, destinations } from "./schema/index";
 import { logger } from "@trackify/shared";
+
+// URL-safe base64 alphabet, 6 bits per char. 8 chars = 48 bits — comfortably
+// over T11's 40-bit floor, still short enough that a `<script src>` tag stays
+// readable at a glance. CSPRNG is `node:crypto`.
+export function newLoaderPath(): string {
+  return randomBytes(6)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
 
 // Two tenants with distinct hostnames and distinct destination configs.
 // Deterministic + idempotent: safe to re-run against a fresh DB or an existing one.
@@ -41,8 +53,12 @@ async function main() {
         slug: t.slug,
         name: t.name,
         allowedOrigins: [...t.allowedOrigins],
+        loaderPath: newLoaderPath(),
       })
       .onConflictDoUpdate({
+        // loaderPath is deliberately NOT in the update set — the path is
+        // generated once on first provisioning and re-seeding must not
+        // rotate it (rotating breaks cached storefront <script src> tags).
         target: tenants.slug,
         set: { name: t.name, allowedOrigins: [...t.allowedOrigins] },
       })
@@ -63,7 +79,12 @@ async function main() {
     });
 
     log.info(
-      { tenant_id: tenant.id, slug: t.slug, hostname: t.hostname },
+      {
+        tenant_id: tenant.id,
+        slug: t.slug,
+        hostname: t.hostname,
+        loader_path: tenant.loaderPath,
+      },
       "seeded tenant",
     );
   }
