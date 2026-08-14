@@ -156,6 +156,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@trackify/sgtm-templates':
+        specifier: workspace:*
+        version: link:../../packages/sgtm-templates
       '@types/node':
         specifier: ^20.14.10
         version: 20.19.43
@@ -224,6 +227,25 @@ importers:
       drizzle-kit:
         specifier: ^0.24.2
         version: 0.24.2
+      tsx:
+        specifier: ^4.16.2
+        version: 4.23.12
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+
+  packages/sgtm-templates:
+    dependencies:
+      '@trackify/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.10
+        version: 20.19.43
       tsx:
         specifier: ^4.16.2
         version: 4.23.12
