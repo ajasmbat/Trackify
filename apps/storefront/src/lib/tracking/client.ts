@@ -24,6 +24,10 @@ export const RELAY_URL_ENV_KEY = "NEXT_PUBLIC_RELAY_URL";
 export const PIXEL_ID_ENV_KEY = "NEXT_PUBLIC_META_PIXEL_ID";
 export const TENANT_ID_ENV_KEY = "NEXT_PUBLIC_TENANT_ID";
 
+/** Ingest path on the relay. `NEXT_PUBLIC_RELAY_URL` is a BASE URL — see
+ *  `.env.example` and `layout.tsx` (which appends `/l/…` for the loader). */
+export const INGEST_PATH = "/e";
+
 const IDENTIFIED_STORAGE = "tf_identified";
 
 /** Discriminated input — one arm per event the storefront ever fires. */
@@ -87,6 +91,16 @@ function readEnv(key: string): string | undefined {
 
 function resolveRelayUrl(override?: string): string | undefined {
   return override ?? readEnv(RELAY_URL_ENV_KEY);
+}
+
+/**
+ * Build the ingest endpoint URL from a base URL. `NEXT_PUBLIC_RELAY_URL` is
+ * documented as a base (e.g. `https://data.example.dev` or
+ * `http://localhost:3003`); the tracker owns the ingest path. `new URL()`
+ * handles trailing slashes and existing paths on the base for us.
+ */
+function buildIngestUrl(base: string): string {
+  return new URL(INGEST_PATH, base.endsWith("/") ? base : `${base}/`).toString();
 }
 
 function resolveTenantId(): string {
@@ -324,18 +338,28 @@ export function track(input: TrackInput, opts: TrackOptions = {}): TrackResult {
 
   // (2) Relay — non-blocking. sendBeacon for unload-safe events, fetch for
   // the rest. NO await between these two calls.
-  const relayUrl = resolveRelayUrl(opts.relayUrl);
-  if (!relayUrl) {
+  const relayBase = resolveRelayUrl(opts.relayUrl);
+  if (!relayBase) {
     // Development or misconfig: the pixel still fires but the relay call is
     // silently dropped. In prod the boot check (loadEnv in the app it's
-    // deployed to) is expected to catch this earlier.
+    // deployed to) is expected to catch this earlier. Warn in dev so the
+    // next reporter finds it in 30 seconds instead of an hour.
+    warnSuppressed(`${RELAY_URL_ENV_KEY} is not set — relay call dropped`);
     return { eventId, suppressed: "no-relay-url" };
   }
   const transport = opts.transport ?? defaultTransport;
   const body = JSON.stringify({ events: [canonical] });
-  transport.send(relayUrl, body, { unloadSafe: isUnloadSafe(input.name) });
+  transport.send(buildIngestUrl(relayBase), body, {
+    unloadSafe: isUnloadSafe(input.name),
+  });
 
   return { eventId };
+}
+
+function warnSuppressed(message: string): void {
+  if (process.env.NODE_ENV === "production") return;
+  if (typeof console === "undefined" || typeof console.warn !== "function") return;
+  console.warn(`[trackify] ${message}`);
 }
 
 /**

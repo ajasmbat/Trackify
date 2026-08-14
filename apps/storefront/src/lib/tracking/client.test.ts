@@ -33,7 +33,11 @@ function makeCapturingTransport(): { transport: Transport; sends: CapturedSend[]
   return { transport, sends };
 }
 
-const RELAY_URL = "https://relay.example.test/e";
+// Base URL, as documented in `.env.example`. The client owns the ingest
+// path — regression cover for a bug where the tracker POSTed to bare
+// `RELAY_URL` and the relay's `/e` handler was never hit (TRAC-DB1XCQ).
+const RELAY_URL = "https://relay.example.test";
+const INGEST_URL = "https://relay.example.test/e";
 const TENANT = "shop.example.test";
 
 let dom: TrackingTestDom;
@@ -201,6 +205,32 @@ describe("missing config", () => {
     expect(res.suppressed).toBe("no-relay-url");
     expect(sends).toHaveLength(0);
     expect(extractPixelEventId(dom.fbqCalls)).toBe(res.eventId);
+  });
+});
+
+describe("ingest URL construction", () => {
+  // Regression: reporter had NEXT_PUBLIC_RELAY_URL=http://localhost:3003 (no
+  // /e), tracker POSTed to bare RELAY_URL, and the request hit the relay's
+  // 404 branch instead of the ingest handler at POST /e.
+  it("appends /e to a base RELAY_URL", () => {
+    const { transport, sends } = makeCapturingTransport();
+    track({ name: "page_view", path: "/" }, { transport });
+    expect(sends).toHaveLength(1);
+    expect(sends[0]!.url).toBe(INGEST_URL);
+  });
+
+  it("appends /e when RELAY_URL has a trailing slash", () => {
+    process.env[RELAY_URL_ENV_KEY] = `${RELAY_URL}/`;
+    const { transport, sends } = makeCapturingTransport();
+    track({ name: "page_view", path: "/" }, { transport });
+    expect(sends[0]!.url).toBe(INGEST_URL);
+  });
+
+  it("works with a localhost base URL (the reporter's exact config)", () => {
+    process.env[RELAY_URL_ENV_KEY] = "http://localhost:3003";
+    const { transport, sends } = makeCapturingTransport();
+    track({ name: "page_view", path: "/" }, { transport });
+    expect(sends[0]!.url).toBe("http://localhost:3003/e");
   });
 });
 
